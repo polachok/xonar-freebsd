@@ -1111,15 +1111,14 @@ xonar_attach(device_t dev)
 		goto bad;
 	}
 
-	sc->bufmaxsz = sc->bufsz = pcm_getbuffersize(dev, 2048, DEFAULT_BUFFER_BYTES_MULTICH,
-												 BUFFER_BYTES_MAX_MULTICH);
+	sc->bufmaxsz = sc->bufsz = pcm_getbuffersize(dev, 2048, 2048*4, 65536);
 	if (bus_dma_tag_create( /* parent */ NULL,
 		/* alignment */ 4, /* boundary */ 0,
 		/* lowaddr */ BUS_SPACE_MAXADDR_32BIT,
 		/* highaddr */ BUS_SPACE_MAXADDR,
 		/* filter */ NULL, /* filterarg */ NULL,
 		/* maxsize */ sc->bufsz, /* nsegments */ 1,
-							/* maxsegz */ BUFFER_BYTES_MAX_MULTICH,
+		/* maxsegz */ 0x3ffff,
 		/* flags */ 0, &sc->dmat) != 0) {
 		device_printf(sc->dev, "unable to create dma tag\n");
 		return (ENOMEM);
