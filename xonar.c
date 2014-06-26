@@ -209,7 +209,6 @@ pcm1796_set_volume(struct xonar_info *sc, int left, int right)
 			pcm1796_vol_scale(right));
 }
 
-#if 0
 static void
 pcm1796_set_mute(struct xonar_info *sc, int mute) 
 {
@@ -222,7 +221,6 @@ pcm1796_set_mute(struct xonar_info *sc, int mute)
 		pcm1796_write(sc, XONAR_STX_FRONTDAC,
 				18, reg & ~PCM1796_MUTE);
 }
-#endif
 
 static void
 pcm1796_set_deemph(struct xonar_info *sc, int deemph)
@@ -647,15 +645,17 @@ cmi8788_toggle_sound(struct xonar_info *sc, int output) {
 		ctrl = cmi8788_read_2(sc, GPIO_CONTROL);
 		cmi8788_write_2(sc, GPIO_CONTROL,
 				ctrl | sc->output_control_gpio);
-		// FIXME: check this
 		tsleep (sc, 0, "apop", sc->anti_pop_delay);
 		data = cmi8788_read_2(sc, GPIO_DATA);
 		cmi8788_write_2(sc, GPIO_DATA,
 				data | sc->output_control_gpio);
 	} else {
+		/* Mute DAC before toggle GPIO to avoid another pop */
+		pcm1796_set_mute (sc, 1);
 		data = cmi8788_read_2(sc, GPIO_DATA);
 		cmi8788_write_2(sc, GPIO_DATA,
 				data & ~sc->output_control_gpio);
+		pcm1796_set_mute (sc, 0);
 	}
 }
 
@@ -789,7 +789,7 @@ xonar_init(struct xonar_info *sc)
 		pcm1796_write(sc, XONAR_STX_FRONTDAC, 19, 0);
 		break;
 	case SUBID_XONAR_ST:
-		sc->anti_pop_delay = 800;
+		sc->anti_pop_delay = 100;
 		sc->output_control_gpio = GPIO_PIN0;
 
 		cmi8788_write_1(sc, FUNCTION,
@@ -805,7 +805,11 @@ xonar_init(struct xonar_info *sc)
 		pcm1796_write(sc, XONAR_ST_CLOCK, 0x5, 0x9);
 		pcm1796_write(sc, XONAR_ST_CLOCK, 0x2, 0x0);
 		pcm1796_write(sc, XONAR_ST_CLOCK, 0x3, 0x0 | (0 << 3) | 0x0 | 0x1);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x4, (0 << 1) | 0x0);
+		/* KLUDGE:
+		 * Strange thing: writing to this register breaks output selection. Don't know why.
+		 * Luckily, 0 is the default value
+		 */
+		/* pcm1796_write(sc, XONAR_ST_CLOCK, 0x4, (0 << 1) | 0x0); */
 		pcm1796_write(sc, XONAR_ST_CLOCK, 0x06, 0x00);
 		pcm1796_write(sc, XONAR_ST_CLOCK, 0x07, 0x10);
 		pcm1796_write(sc, XONAR_ST_CLOCK, 0x08, 0x00);
@@ -1144,13 +1148,11 @@ xonar_attach(device_t dev)
 			"buffersize", CTLTYPE_UINT | CTLFLAG_RW | CTLFLAG_ANYBODY,
 			sc->dev, sizeof(sc->dev), sysctl_xonar_buffersize, "I",
 			"Set buffer size");
-#if 0
 	SYSCTL_ADD_PROC(snd_sysctl_tree(sc->dev),
 			SYSCTL_CHILDREN(snd_sysctl_tree_top(sc->dev)), OID_AUTO,
 			"output", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
 			sizeof(sc->dev), sysctl_xonar_output, "I",
 			"Set output: 0 - line, 1 - rear hp, 2 - hp");
-#endif
 	SYSCTL_ADD_PROC(snd_sysctl_tree(sc->dev),
 			SYSCTL_CHILDREN(snd_sysctl_tree_top(sc->dev)), OID_AUTO,
 			"rolloff", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
@@ -1185,9 +1187,7 @@ xonar_detach(device_t dev)
 		return r;
 
 	/* we expect it to be OUTPUT_LINE on attach */
-#if 0
 	cmi8788_set_output(sc, OUTPUT_LINE);
-#endif
 
 	xonar_cleanup(sc);
 	return (0);
