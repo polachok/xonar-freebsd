@@ -17,8 +17,6 @@
 #include "mixer_if.h"
 #include "xonar.h"
 
-#define XONAR_DEBUG 		1
-
 #define MAX_PORTC 		4
 
 #define CHAN_STATE_INIT 	0x1
@@ -107,10 +105,8 @@ static const struct {
 
 static u_int32_t xonar_fmt[] = {
 	AFMT_S16_LE | AFMT_STEREO,
-#if 0
-	SND_FORMAT(AFMT_S24_LE, 2, 0),
-	SND_FORMAT(AFMT_S32_LE, 2, 0),
-#endif
+	AFMT_S24_LE | AFMT_STEREO,
+	AFMT_S32_LE | AFMT_STEREO,
 	0
 };
 
@@ -383,11 +379,9 @@ xonar_chan_init(kobj_t obj, void *devinfo,
 			return NULL;
 		}
 #if 0
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "%s buf %d alignment %d\n", (dir == PCMDIR_PLAY)?
-			      "play" : "rec", (uint32_t)sndbuf_getbufaddr(ch->buffer),
-			      sndbuf_getalign(ch->buffer));
-#endif
+		DEB(device_printf(sc->dev, "%s buf %d alignment %d\n", (dir == PCMDIR_PLAY)?
+				  "play" : "rec", (uint32_t)sndbuf_getbufaddr(ch->buffer),
+						  sndbuf_getalign(ch->buffer)));
 #endif
 	}
 	ch->state = CHAN_STATE_INIT;
@@ -423,10 +417,9 @@ xonar_chan_setformat(kobj_t obj, void *data, u_int32_t format)
 	struct xonar_info *sc = ch->parent;
 	int bits;
 
-#ifdef XONAR_DEBUG
-	device_printf(sc->dev, "%s %dbits %dchans\n", __func__, AFMT_BIT(format),
-			AFMT_CHANNEL(format));
-#endif
+	DEB(device_printf(sc->dev, "%s %dbits %dchans\n", __func__, AFMT_BIT(format),
+					  AFMT_CHANNEL(format)));
+
 	ch->fmt = format;
 	if (format & AFMT_S32_LE)
 		bits = 8;
@@ -477,10 +470,10 @@ xonar_prepare_output(struct xonar_chinfo *ch)
 			channels = MULTICH_MODE_8CH;
 			break;
 		}
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "buffer addr = 0x%x size = %d\n",
-				addr, sndbuf_getsize(ch->buffer));
-#endif
+
+		DEB(device_printf(sc->dev, "buffer addr = 0x%x size = %d\n",
+						  addr, sndbuf_getsize(ch->buffer)));
+
 		cmi8788_write_4(sc, MULTICH_ADDR, addr);
 		cmi8788_write_4(sc, MULTICH_SIZE, sc->bufsz / 4 - 1);
 		/* what is this 1024 you ask
@@ -521,11 +514,9 @@ xonar_chan_trigger(kobj_t obj, void *data, int go)
 	snd_mtxlock(sc->lock);
 	switch (go) {
 	case PCMTRIG_START:
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "trigger start\n");
-		device_printf(sc->dev, "bufsz = %d\n", (int)sc->bufsz);
-		device_printf(sc->dev, "chan state = 0x%x\n", ch->state);
-#endif
+		DEB(device_printf(sc->dev, "trigger start\n"));
+		DEB(device_printf(sc->dev, "bufsz = %d\n", (int)sc->bufsz));
+		DEB(device_printf(sc->dev, "chan state = 0x%x\n", ch->state));
 		if (ch->state & CHAN_STATE_PLAY)
 			break;
 		if (ch->state == CHAN_STATE_INIT) {
@@ -543,9 +534,7 @@ xonar_chan_trigger(kobj_t obj, void *data, int go)
 
 	case PCMTRIG_ABORT:
 	case PCMTRIG_STOP:
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "trigger stop\n");
-#endif
+		DEB(device_printf(sc->dev, "trigger stop\n"));
 		if (!(ch->state & CHAN_STATE_PLAY))
 			break;
 		ch->state &= ~CHAN_STATE_PLAY;
