@@ -791,21 +791,21 @@ xonar_init(struct xonar_info *sc)
 				cmi8788_read_2(sc, GPIO_DATA) |
 				GPIO_PIN0 | GPIO_PIN8);
 
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x5, 0x9);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x2, 0x0);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x3, 0x0 | (0 << 3) | 0x0 | 0x1);
-		/* KLUDGE:
-		 * Strange thing: writing to this register breaks output selection. Don't know why.
-		 * Luckily, 0 is the default value
-		 */
-		/* pcm1796_write(sc, XONAR_ST_CLOCK, 0x4, (0 << 1) | 0x0); */
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x06, 0x00);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x07, 0x10);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x08, 0x00);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x09, 0x00);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x16, 0x10);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x17, 0);
-		pcm1796_write(sc, XONAR_ST_CLOCK, 0x5, 0x1);
+        /* FIXME:
+         * Confusing naming. Invokations of the following functions
+         * have nothing to do with PCM1796
+         */
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x5, 0x9);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x2, 0x0);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x3, 0x0 | (0 << 3) | 0x0 | 0x1);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x4, (0 << 1) | 0x0);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x06, 0x00);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x07, 0x10);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x08, 0x00);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x09, 0x00);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x16, 0x10);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x17, 0);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x5, 0x1);
 
 		/* Init DAC */
 		pcm1796_write(sc, XONAR_ST_FRONTDAC, 20, 0);
