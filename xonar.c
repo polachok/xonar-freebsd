@@ -397,7 +397,7 @@ xonar_chan_init(kobj_t obj, void *devinfo,
 			device_printf(sc->dev, "Cannot allocate sndbuf\n");
 			return NULL;
 		}
-#if 0
+#if defined __FreeBSD__
 		DEB(device_printf(sc->dev, "%s buf %d alignment %d\n", (dir == PCMDIR_PLAY)?
 				  "play" : "rec", (uint32_t)sndbuf_getbufaddr(ch->buffer),
 						  sndbuf_getalign(ch->buffer)));
@@ -904,7 +904,7 @@ chan_reset_buf(struct xonar_chinfo *ch)
 	sndbuf_setfmt(bs, c->format);
 	sndbuf_setspd(bs, c->speed);
 
-#if 0
+#if defined __FreeBSD__
 	if (c->direction == PCMDIR_PLAY) {
 		bs->sl = sndbuf_getmaxsize(bs);
 		bs->shadbuf = kern_malloc(bs->sl, M_DEVBUF, M_NOWAIT);
