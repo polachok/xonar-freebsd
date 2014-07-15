@@ -3,6 +3,6 @@
 
 KMOD=	snd_xonar
 SRCS=	device_if.h bus_if.h pci_if.h channel_if.h mixer_if.h
-SRCS+=	xonar.c
+SRCS+=	xonar_compat.c xonar.c
 
 .include <bsd.kmod.mk>

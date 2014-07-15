@@ -4,8 +4,15 @@
 
 #include <dev/sound/pcm/sound.h>
 
+#if defined __DragonFly__
+#include <bus/pci/pcireg.h>
+#include <bus/pci/pcivar.h>
+#elif defined __FreeBSD__
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#else
+#error "Platform not supported"
+#endif
 #include <sys/sysctl.h>
 #include <sys/endian.h>
 
@@ -16,8 +23,7 @@
 
 #include "mixer_if.h"
 #include "xonar.h"
-
-#define XONAR_DEBUG 		1
+#include "xonar_compat.h"
 
 #define MAX_PORTC 		4
 
@@ -29,6 +35,12 @@
 #define OUTPUT_LINE 		0
 #define OUTPUT_REAR_HP 		1
 #define OUTPUT_HP 		2
+
+#if defined __DragonFly__
+/* stubs */
+#define AFMT_BIT(fmt) 16
+#define AFMT_CHANNEL(fmt) 2
+#endif
 
 struct xonar_info;
 
@@ -91,8 +103,8 @@ static const struct {
 } xonar_hw[] = {
 	/* we actually support only this one, it shouldn't be too hard to add others */
 	{ ASUS_VENDOR_ID, SUBID_XONAR_STX, "Asus Xonar Essence STX (AV100)" 	},
-#if 0
 	{ ASUS_VENDOR_ID, SUBID_XONAR_ST,  "Asus Xonar Essence ST (AV100)" 	},
+#if 0
 	{ ASUS_VENDOR_ID, SUBID_XONAR_D1,  "Asus Xonar D1 (AV100)" 		},
 	{ ASUS_VENDOR_ID, SUBID_XONAR_DX,  "Asus Xonar DX (AV100)" 		},
 	{ ASUS_VENDOR_ID, SUBID_XONAR_D2,  "Asus Xonar D2 (AV200)" 		},
@@ -101,12 +113,21 @@ static const struct {
 #endif
 };
 
+#if defined __DragonFly__
+static u_int32_t xonar_fmt[] = {
+	AFMT_S16_LE | AFMT_STEREO,
+	AFMT_S24_LE | AFMT_STEREO,
+	AFMT_S32_LE | AFMT_STEREO,
+	0
+};
+#elif defined __FreeBSD__
 static u_int32_t xonar_fmt[] = {
 	SND_FORMAT(AFMT_S16_LE, 2, 0),
 	SND_FORMAT(AFMT_S24_LE, 2, 0),
 	SND_FORMAT(AFMT_S32_LE, 2, 0),
 	0
 };
+#endif
 
 static struct pcmchan_caps xonar_caps = { 32000, 192000, xonar_fmt, 0 };
 
@@ -160,7 +181,7 @@ pcm1796_write_i2c(struct xonar_info *sc, uint8_t codec_num, uint8_t reg,
 		count--;
 	}
 	if (count == 0) {
-		device_printf(sc->dev, "i2c timeout");
+		device_printf(sc->dev, "i2c timeout\n");
 		return EIO;
 	}
 
@@ -203,7 +224,6 @@ pcm1796_set_volume(struct xonar_info *sc, int left, int right)
 			pcm1796_vol_scale(right));
 }
 
-#if 0
 static void
 pcm1796_set_mute(struct xonar_info *sc, int mute) 
 {
@@ -216,7 +236,6 @@ pcm1796_set_mute(struct xonar_info *sc, int mute)
 		pcm1796_write(sc, XONAR_STX_FRONTDAC,
 				18, reg & ~PCM1796_MUTE);
 }
-#endif
 
 static void
 pcm1796_set_deemph(struct xonar_info *sc, int deemph)
@@ -250,16 +269,6 @@ pcm1796_set_bypass(struct xonar_info *sc, int bypass)
 		pcm1796_write(sc, XONAR_STX_FRONTDAC, 19, reg | PCM1796_DFTH);
 	else
 		pcm1796_write(sc, XONAR_STX_FRONTDAC, 19, reg & ~PCM1796_DFTH);
-}
-
-static void
-pcm1796_init(struct xonar_info *sc)
-{
-	pcm1796_write(sc, XONAR_STX_FRONTDAC, 20, PCM1796_SRST);
-	pcm1796_write(sc, XONAR_STX_FRONTDAC, 20, 0);
-	pcm1796_set_volume(sc, 75, 75);
-	pcm1796_write(sc, XONAR_STX_FRONTDAC, 18, PCM1796_FMT_24L|PCM1796_ATLD);
-	pcm1796_write(sc, XONAR_STX_FRONTDAC, 19, 0);
 }
 
 static void 
@@ -351,6 +360,7 @@ xonar_chan_init(kobj_t obj, void *devinfo,
 	ch->channel = c;
 	ch->dir = dir;
 	ch->blksz = 2048;
+	ch->bps = 16;
 	switch (sc->pnum) {
 	case 0:
 	case 1:
@@ -383,14 +393,14 @@ xonar_chan_init(kobj_t obj, void *devinfo,
 		break;
 	}
 	if (sc->pnum == 0) {
-		if (sndbuf_alloc(ch->buffer, sc->dmat, 0, sc->bufsz) != 0) {
+		if (pcm_sndbuf_alloc(ch->buffer, sc->dmat, 0, sc->bufsz) != 0) {
 			device_printf(sc->dev, "Cannot allocate sndbuf\n");
 			return NULL;
 		}
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "%s buf %d alignment %d\n", (dir == PCMDIR_PLAY)?
-			      "play" : "rec", (uint32_t)sndbuf_getbufaddr(ch->buffer),
-			      sndbuf_getalign(ch->buffer));
+#if defined __FreeBSD__
+		DEB(device_printf(sc->dev, "%s buf %d alignment %d\n", (dir == PCMDIR_PLAY)?
+				  "play" : "rec", (uint32_t)sndbuf_getbufaddr(ch->buffer),
+						  sndbuf_getalign(ch->buffer)));
 #endif
 	}
 	ch->state = CHAN_STATE_INIT;
@@ -426,10 +436,9 @@ xonar_chan_setformat(kobj_t obj, void *data, u_int32_t format)
 	struct xonar_info *sc = ch->parent;
 	int bits;
 
-#ifdef XONAR_DEBUG
-	device_printf(sc->dev, "%s %dbits %dchans\n", __func__, AFMT_BIT(format),
-			AFMT_CHANNEL(format));
-#endif
+	DEB(device_printf(sc->dev, "%s %dbits %dchans\n", __func__, AFMT_BIT(format),
+					  AFMT_CHANNEL(format)));
+
 	ch->fmt = format;
 	if (format & AFMT_S32_LE)
 		bits = 8;
@@ -438,7 +447,7 @@ xonar_chan_setformat(kobj_t obj, void *data, u_int32_t format)
 	else if (format & AFMT_S24_LE)
 		bits = 4;
 	else {
-		printf("format unknown\n");
+		kern_printf("format unknown\n");
 		return 1;
 	}
 	ch->bps = bits;
@@ -480,10 +489,10 @@ xonar_prepare_output(struct xonar_chinfo *ch)
 			channels = MULTICH_MODE_8CH;
 			break;
 		}
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "buffer addr = 0x%x size = %d\n",
-				addr, sndbuf_getsize(ch->buffer));
-#endif
+
+		DEB(device_printf(sc->dev, "buffer addr = 0x%x size = %d\n",
+						  addr, sndbuf_getsize(ch->buffer)));
+
 		cmi8788_write_4(sc, MULTICH_ADDR, addr);
 		cmi8788_write_4(sc, MULTICH_SIZE, sc->bufsz / 4 - 1);
 		/* what is this 1024 you ask
@@ -524,11 +533,9 @@ xonar_chan_trigger(kobj_t obj, void *data, int go)
 	snd_mtxlock(sc->lock);
 	switch (go) {
 	case PCMTRIG_START:
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "trigger start\n");
-		device_printf(sc->dev, "bufsz = %d\n", (int)sc->bufsz);
-		device_printf(sc->dev, "chan state = 0x%x\n", ch->state);
-#endif
+		DEB(device_printf(sc->dev, "trigger start\n"));
+		DEB(device_printf(sc->dev, "bufsz = %d\n", (int)sc->bufsz));
+		DEB(device_printf(sc->dev, "chan state = 0x%x\n", ch->state));
 		if (ch->state & CHAN_STATE_PLAY)
 			break;
 		if (ch->state == CHAN_STATE_INIT) {
@@ -546,9 +553,7 @@ xonar_chan_trigger(kobj_t obj, void *data, int go)
 
 	case PCMTRIG_ABORT:
 	case PCMTRIG_STOP:
-#ifdef XONAR_DEBUG
-		device_printf(sc->dev, "trigger stop\n");
-#endif
+		DEB(device_printf(sc->dev, "trigger stop\n"));
 		if (!(ch->state & CHAN_STATE_PLAY))
 			break;
 		ch->state &= ~CHAN_STATE_PLAY;
@@ -621,6 +626,7 @@ xonar_mixer_set(struct snd_mixer *m, unsigned dev, unsigned left, unsigned right
 {
 	struct xonar_info *sc = mix_getdevinfo(m);
 
+	snd_mtxlock(sc->lock);
 	switch (dev) {
 	case SOUND_MIXER_VOLUME:
 		sc->vol[0] = left;
@@ -628,6 +634,7 @@ xonar_mixer_set(struct snd_mixer *m, unsigned dev, unsigned left, unsigned right
 		pcm1796_set_volume(sc, left, right);
 		break;
 	}
+	snd_mtxunlock(sc->lock);
 	return (0);
 }
 
@@ -646,14 +653,17 @@ cmi8788_toggle_sound(struct xonar_info *sc, int output) {
 		ctrl = cmi8788_read_2(sc, GPIO_CONTROL);
 		cmi8788_write_2(sc, GPIO_CONTROL,
 				ctrl | sc->output_control_gpio);
-		pause("anti-pop", sc->anti_pop_delay);
+		tsleep (sc, 0, "apop", sc->anti_pop_delay);
 		data = cmi8788_read_2(sc, GPIO_DATA);
 		cmi8788_write_2(sc, GPIO_DATA,
 				data | sc->output_control_gpio);
 	} else {
+		/* Mute DAC before toggle GPIO to avoid another pop */
+		pcm1796_set_mute (sc, 1);
 		data = cmi8788_read_2(sc, GPIO_DATA);
 		cmi8788_write_2(sc, GPIO_DATA,
 				data & ~sc->output_control_gpio);
+		pcm1796_set_mute (sc, 0);
 	}
 }
 
@@ -662,6 +672,7 @@ cmi8788_set_output(struct xonar_info *sc, int which)
 {
 	uint16_t val;
 
+    snd_mtxlock(sc->lock);
 	cmi8788_toggle_sound(sc, 0);
 	switch (sc->model) {
 	case SUBID_XONAR_ST:
@@ -687,6 +698,7 @@ cmi8788_set_output(struct xonar_info *sc, int which)
 		break;
 	}
 	cmi8788_toggle_sound(sc, 1);
+    snd_mtxunlock(sc->lock);
 }
 
 static int
@@ -778,8 +790,47 @@ xonar_init(struct xonar_info *sc)
 				cmi8788_read_2(sc, I2C_CTRL) |
 				TWOWIRE_SPEED_FAST);
 
-		pcm1796_init(sc);
+		pcm1796_write(sc, XONAR_STX_FRONTDAC, 20, PCM1796_SRST);
+		pcm1796_write(sc, XONAR_STX_FRONTDAC, 20, 0);
+		pcm1796_set_volume(sc, 75, 75);
+		pcm1796_write(sc, XONAR_STX_FRONTDAC, 18, PCM1796_FMT_24L|PCM1796_ATLD);
+		pcm1796_write(sc, XONAR_STX_FRONTDAC, 19, 0);
 		break;
+	case SUBID_XONAR_ST:
+		sc->anti_pop_delay = 100;
+		sc->output_control_gpio = GPIO_PIN0;
+
+		cmi8788_write_1(sc, FUNCTION,
+				cmi8788_read_1(sc, FUNCTION) | FUNCTION_2WIRE);
+
+		cmi8788_write_2(sc, GPIO_CONTROL,
+				cmi8788_read_2(sc, GPIO_CONTROL) | 0x01FF);
+
+		cmi8788_write_2(sc, GPIO_DATA,
+				cmi8788_read_2(sc, GPIO_DATA) |
+				GPIO_PIN0 | GPIO_PIN8);
+
+        /* FIXME:
+         * Confusing naming. Invokations of the following functions
+         * have nothing to do with PCM1796
+         */
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x5, 0x9);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x2, 0x0);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x3, 0x0 | (0 << 3) | 0x0 | 0x1);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x4, (0 << 1) | 0x0);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x06, 0x00);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x07, 0x10);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x08, 0x00);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x09, 0x00);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x16, 0x10);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x17, 0);
+		pcm1796_write_i2c(sc, XONAR_ST_CLOCK, 0x5, 0x1);
+
+		/* Init DAC */
+		pcm1796_write(sc, XONAR_ST_FRONTDAC, 20, 0);
+		pcm1796_write(sc, XONAR_ST_FRONTDAC, 18, PCM1796_FMT_24L|PCM1796_ATLD);
+		pcm1796_set_volume(sc, 75, 75);
+		pcm1796_write(sc, XONAR_ST_FRONTDAC, 19, 0);
 	}
 
 	/* check if MPU401 is enabled in MISC register */
@@ -794,6 +845,7 @@ xonar_cleanup(struct xonar_info *sc)
 {
 	if (sc->dmat) {
 		bus_dma_tag_destroy(sc->dmat);
+		sc->dmat = NULL;
 	}
 	if (sc->ih) {
 		bus_teardown_intr(sc->dev, sc->irq, sc->ih);
@@ -811,12 +863,8 @@ xonar_cleanup(struct xonar_info *sc)
 		snd_mtxfree(sc->lock);
 		sc->lock = NULL;
 	}
-	if (sc->dmat) {
-		bus_dma_tag_destroy(sc->dmat);
-		sc->dmat = NULL;
-	}
 
-	free(sc, M_DEVBUF);
+	kern_free(sc, M_DEVBUF);
 }
 
 /* this one is a BIG HUGE XXX 
@@ -841,8 +889,8 @@ chan_reset_buf(struct xonar_chinfo *ch)
 			c->bufhard, b, c->bufsoft, bs);
 	sndbuf_destroy(c->bufsoft);
 	sndbuf_destroy(c->bufhard);
-	if (sndbuf_alloc(b, sc->dmat, 0, sc->bufsz) != 0) {
-		printf("failed\n");
+	if (pcm_sndbuf_alloc(b, sc->dmat, 0, sc->bufsz) != 0) {
+		kern_printf("failed\n");
 		device_printf(sc->dev, "Cannot allocate sndbuf\n");
 		goto out;
 	}
@@ -856,13 +904,15 @@ chan_reset_buf(struct xonar_chinfo *ch)
 	sndbuf_setfmt(bs, c->format);
 	sndbuf_setspd(bs, c->speed);
 
+#if defined __FreeBSD__
 	if (c->direction == PCMDIR_PLAY) {
 		bs->sl = sndbuf_getmaxsize(bs);
-		bs->shadbuf = malloc(bs->sl, M_DEVBUF, M_NOWAIT);
+		bs->shadbuf = kern_malloc(bs->sl, M_DEVBUF, M_NOWAIT);
 		if (bs->shadbuf == NULL)
 			goto out;
 	}
-	printf("succeed\n");
+#endif
+	kern_printf("succeed\n");
 	return 0;
 out:
 	sndbuf_destroy(b);
@@ -1042,7 +1092,7 @@ xonar_attach(device_t dev)
 	struct xonar_info *sc;
 	char status[SND_STATUSLEN];
 
-	sc = malloc(sizeof(*sc), M_DEVBUF, M_WAITOK | M_ZERO);
+	sc = kern_malloc(sizeof(*sc), M_DEVBUF, M_WAITOK | M_ZERO);
 	sc->lock = snd_mtxcreate(device_get_nameunit(dev), "snd_cmi8788 softc");
 	sc->dev = dev;
 
@@ -1062,22 +1112,9 @@ xonar_attach(device_t dev)
 	sc->st = rman_get_bustag(sc->reg);
 	sc->sh = rman_get_bushandle(sc->reg);
 
-	sc->bufmaxsz = sc->bufsz = pcm_getbuffersize(dev, 2048, DEFAULT_BUFFER_BYTES_MULTICH,
-			BUFFER_BYTES_MAX_MULTICH);
+    xonar_init(sc);
 
-	if (bus_dma_tag_create( /* parent */ bus_get_dma_tag(dev),
-		/* alignment */ 4, /* boundary */ 0,
-		/* lowaddr */ BUS_SPACE_MAXADDR_24BIT,
-		/* highaddr */ BUS_SPACE_MAXADDR,
-		/* filter */ NULL, /* filterarg */ NULL,
-		/* maxsize */ sc->bufsz, /* nsegments */ 1,
-	       	/* maxsegz */ BUFFER_BYTES_MAX_MULTICH,
-		/* flags */ 0, /* lockfunc */ busdma_lock_mutex,
-		/* lockarg */ sc->lock, &sc->dmat) != 0) {
-		device_printf(sc->dev, "unable to create dma tag\n");
-		return (ENOMEM);
-	}
-	sc->irqid = 0;
+    sc->irqid = 0;
 	sc->irq = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->irqid,
 	    RF_ACTIVE | RF_SHAREABLE);
 	if (!sc->irq || snd_setup_intr(dev, sc->irq, INTR_MPSAFE,
@@ -1086,36 +1123,14 @@ xonar_attach(device_t dev)
 		goto bad;
 	}
 
-	xonar_init(sc);
+	sc->bufmaxsz = sc->bufsz = pcm_getbuffersize(dev, 2048, 2048*4, 65536);
+	if (xonar_create_dma_tag(&sc->dmat, sc->bufsz, bus_get_dma_tag(dev), sc->lock) != 0) {
+		device_printf(sc->dev, "unable to create dma tag\n");
+		return (ENOMEM);
+	}
 
 	if (mixer_init(dev, &xonar_mixer_class, sc))
 		goto bad;
-
-	SYSCTL_ADD_PROC(device_get_sysctl_ctx(sc->dev),
-			SYSCTL_CHILDREN(device_get_sysctl_tree(sc->dev)), OID_AUTO,
-			"buffersize", CTLTYPE_UINT | CTLFLAG_RW | CTLFLAG_ANYBODY,
-			sc->dev, sizeof(sc->dev), sysctl_xonar_buffersize, "I",
-			"Set buffer size");
-	SYSCTL_ADD_PROC(device_get_sysctl_ctx(sc->dev),
-			SYSCTL_CHILDREN(device_get_sysctl_tree(sc->dev)), OID_AUTO,
-			"output", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
-			sizeof(sc->dev), sysctl_xonar_output, "I",
-			"Set output: 0 - line, 1 - rear hp, 2 - hp");
-	SYSCTL_ADD_PROC(device_get_sysctl_ctx(sc->dev),
-			SYSCTL_CHILDREN(device_get_sysctl_tree(sc->dev)), OID_AUTO,
-			"rolloff", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
-			sizeof(sc->dev), sysctl_xonar_rolloff, "I",
-			"Set rolloff: 0 - sharp, 1 - slow");
-	SYSCTL_ADD_PROC(device_get_sysctl_ctx(sc->dev),
-			SYSCTL_CHILDREN(device_get_sysctl_tree(sc->dev)), OID_AUTO,
-			"de-emph", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
-			sizeof(sc->dev), sysctl_xonar_deemph, "I",
-			"Set de-emphasis: 0 - disabled, 1 - enabled");
-	SYSCTL_ADD_PROC(device_get_sysctl_ctx(sc->dev),
-			SYSCTL_CHILDREN(device_get_sysctl_tree(sc->dev)), OID_AUTO,
-			"dfbypass", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
-			sizeof(sc->dev), sysctl_xonar_bypass, "I",
-			"Set digital filter bypass: 0 - disabled, 1 - enabled");
 
 	if (pcm_register(dev, sc, 1 /* MAX_PORTC */, 0))
 		goto bad;
@@ -1124,10 +1139,36 @@ xonar_attach(device_t dev)
 		pcm_addchan(dev, PCMDIR_PLAY, &xonar_chan_class, sc);
 		sc->pnum++;
 	}
-	snprintf(status, SND_STATUSLEN, "at io 0x%lx irq %ld %s",
+	kern_snprintf(status, SND_STATUSLEN, "at io 0x%lx irq %ld %s",
 		 rman_get_start(sc->reg), rman_get_start(sc->irq),
 		 PCM_KLDSTRING(snd_cmi8788));
 	pcm_setstatus(dev, status);
+
+	SYSCTL_ADD_PROC(kern_sysctl_ctx(sc->dev),
+			SYSCTL_CHILDREN(kern_sysctl_tree(sc->dev)), OID_AUTO,
+			"buffersize", CTLTYPE_UINT | CTLFLAG_RW | CTLFLAG_ANYBODY,
+			sc->dev, sizeof(sc->dev), sysctl_xonar_buffersize, "I",
+			"Set buffer size");
+	SYSCTL_ADD_PROC(kern_sysctl_ctx(sc->dev),
+			SYSCTL_CHILDREN(kern_sysctl_tree(sc->dev)), OID_AUTO,
+			"output", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
+			sizeof(sc->dev), sysctl_xonar_output, "I",
+			"Set output: 0 - line, 1 - rear hp, 2 - hp");
+	SYSCTL_ADD_PROC(kern_sysctl_ctx(sc->dev),
+			SYSCTL_CHILDREN(kern_sysctl_tree(sc->dev)), OID_AUTO,
+			"rolloff", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
+			sizeof(sc->dev), sysctl_xonar_rolloff, "I",
+			"Set rolloff: 0 - sharp, 1 - slow");
+	SYSCTL_ADD_PROC(kern_sysctl_ctx(sc->dev),
+			SYSCTL_CHILDREN(kern_sysctl_tree(sc->dev)), OID_AUTO,
+			"de-emph", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
+			sizeof(sc->dev), sysctl_xonar_deemph, "I",
+			"Set de-emphasis: 0 - disabled, 1 - enabled");
+	SYSCTL_ADD_PROC(kern_sysctl_ctx(sc->dev),
+			SYSCTL_CHILDREN(kern_sysctl_tree(sc->dev)), OID_AUTO,
+			"dfbypass", CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY, sc->dev,
+			sizeof(sc->dev), sysctl_xonar_bypass, "I",
+			"Set digital filter bypass: 0 - disabled, 1 - enabled");
 
 	return (0);
 bad:
@@ -1141,10 +1182,10 @@ xonar_detach(device_t dev)
 	struct xonar_info *sc;
 	int r;
 
+	sc = pcm_getdevinfo(dev);
 	r = pcm_unregister(dev);
 	if (r)
 		return r;
-	sc = pcm_getdevinfo(dev);
 
 	/* we expect it to be OUTPUT_LINE on attach */
 	cmi8788_set_output(sc, OUTPUT_LINE);
