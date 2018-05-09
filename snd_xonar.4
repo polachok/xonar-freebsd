@@ -1,5 +1,5 @@
 .\" Copyright (c) 2004 Atte Peltomaki
-.\" Copiright (c) 2018 Sebastian Oswald
+.\" Copyright (c) 2018 Sebastian Oswald
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -24,24 +24,24 @@
 .\" SUCH DAMAGE.
 .\"
 .Dd April 12, 2018
-.Dt SND_CMI8788 4
+.Dt SND_XONAR 4
 .Os
 .Sh NAME
-.Nm snd_cmi8788
-.Nd "CMedia CMI8788 PCI bridge device driver"
+.Nm snd_xonar
+.Nd "CMedia CMI8788 PCI bridge device driver For ASUS Xonar ST/STX"
 .Sh SYNOPSIS
 To compile this driver into the kernel, place the following lines in your
 kernel configuration file:
 .Bd -ragged -offset indent
 .Cd "device sound"
-.Cd "device snd_cmi8788"
+.Cd "device snd_xonar"
 .Ed
 .Pp
 Alternatively, to load the driver as a module at boot time, place the
 following line in
 .Xr loader.conf 5 :
 .Bd -literal -offset indent
-snd_cmi8788_load="YES"
+snd_xonar_load="YES"
 .Ed
 .Sh DESCRIPTION
 The
